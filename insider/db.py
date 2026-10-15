@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS filings (
     report_nm   TEXT,
     parsed      INTEGER NOT NULL DEFAULT 0,   -- 0 미처리, 1 성공, -1 실패
     parse_error TEXT,
-    fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    reported_at TEXT                          -- 발송한 시각. NULL 이면 아직 안 보냄 ('migrated'/'bootstrap' 은 보낸 걸로 간주)
 );
 
 CREATE TABLE IF NOT EXISTS trades (
@@ -68,6 +69,13 @@ class Store:
         if "reporter_type" not in cols:
             self.conn.execute("ALTER TABLE trades ADD COLUMN reporter_type TEXT")
             self.conn.commit()
+        fcols = {r[1] for r in self.conn.execute("PRAGMA table_info(filings)")}
+        if "reported_at" not in fcols:
+            self.conn.execute("ALTER TABLE filings ADD COLUMN reported_at TEXT")
+            # 이 컬럼이 생기기 전의 공시는 예전 방식(고정 기간)으로 이미 발송됐거나 지나간 것이다.
+            # 그대로 두면 다음 실행에서 한꺼번에 다시 발송되므로 '보낸 것'으로 표시한다.
+            self.conn.execute("UPDATE filings SET reported_at = 'migrated'")
+            self.conn.commit()
 
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
@@ -96,10 +104,58 @@ class Store:
                 inserted += cur.rowcount
         return inserted
 
-    def unparsed_filings(self, limit: int = 500) -> list[sqlite3.Row]:
+    def unparsed_filings(self, limit: int = 500, retry_since: str | None = None) -> list[sqlite3.Row]:
+        """아직 원문을 못 읽은 공시. retry_since(YYYYMMDD)를 주면 그 이후 접수분 중 실패했던 것도 다시 시도한다.
+        (DART 가 원문을 늦게 올려 '014 파일이 존재하지 않습니다'로 실패하는 경우가 있다)"""
+        if retry_since:
+            return self.conn.execute(
+                """SELECT * FROM filings WHERE parsed = 0 OR (parsed = -1 AND rcept_dt >= ?)
+                   ORDER BY rcept_dt, rcept_no LIMIT ?""",
+                (retry_since, limit),
+            ).fetchall()
         return self.conn.execute(
             "SELECT * FROM filings WHERE parsed = 0 ORDER BY rcept_dt, rcept_no LIMIT ?", (limit,)
         ).fetchall()
+
+    # ---- 발송 여부 -----------------------------------------------------
+    def unreported_filings(self, since_rcept_dt: str) -> list[dict]:
+        """원문을 읽었고 아직 발송하지 않은 공시 (since 이후 접수분만)."""
+        rows = self.conn.execute(
+            """SELECT * FROM filings
+               WHERE parsed = 1 AND reported_at IS NULL AND rcept_dt >= ?
+               ORDER BY rcept_dt, rcept_no""",
+            (since_rcept_dt,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_reported(self, rcept_nos: Iterable[str], when: str) -> None:
+        with self.tx() as c:
+            c.executemany("UPDATE filings SET reported_at = ? WHERE rcept_no = ?", [(when, r) for r in rcept_nos])
+
+    def has_any_reported(self) -> bool:
+        return self.conn.execute("SELECT 1 FROM filings WHERE reported_at IS NOT NULL LIMIT 1").fetchone() is not None
+
+    def mark_reported_before(self, before_rcept_dt: str, tag: str) -> int:
+        """before 보다 먼저 접수된 미발송 공시를 '보낸 것'으로 표시한다 (첫 실행 때 지난 공시를 쏟아내지 않도록)."""
+        with self.tx() as c:
+            cur = c.execute(
+                "UPDATE filings SET reported_at = ? WHERE reported_at IS NULL AND rcept_dt < ?", (tag, before_rcept_dt)
+            )
+        return cur.rowcount
+
+    def reported_trade_keys(self, corp_codes: Iterable[str]) -> set[tuple]:
+        """이미 발송한(또는 지난 것으로 처리한) 공시에 들어 있던 거래들의 키. 정정공시 중복 제거용."""
+        codes = list(set(corp_codes))
+        keys: set[tuple] = set()
+        for i in range(0, len(codes), 500):
+            chunk = codes[i : i + 500]
+            rows = self.conn.execute(
+                f"""SELECT t.* FROM trades t JOIN filings f ON f.rcept_no = t.rcept_no
+                    WHERE f.reported_at IS NOT NULL AND t.corp_code IN ({",".join("?" * len(chunk))})""",
+                chunk,
+            ).fetchall()
+            keys.update(trade_key(dict(r)) for r in rows)
+        return keys
 
     def mark_parsed(self, rcept_no: str, ok: bool, error: str | None = None) -> None:
         with self.tx() as c:
@@ -142,6 +198,19 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def trades_for_filings(self, rcept_nos: list[str]) -> list[dict]:
+        out: list[dict] = []
+        for i in range(0, len(rcept_nos), 500):
+            chunk = rcept_nos[i : i + 500]
+            rows = self.conn.execute(
+                f"""SELECT t.*, f.rcept_dt FROM trades t JOIN filings f ON f.rcept_no = t.rcept_no
+                    WHERE t.rcept_no IN ({",".join("?" * len(chunk))})
+                    ORDER BY f.rcept_dt, t.corp_name""",
+                chunk,
+            ).fetchall()
+            out += [dict(r) for r in rows]
+        return out
+
     def corp_trades_since(self, corp_code: str, since_event_date: str) -> list[dict]:
         rows = self.conn.execute(
             "SELECT * FROM trades WHERE corp_code = ? AND event_date >= ? ORDER BY event_date",
@@ -157,6 +226,21 @@ class Store:
             )
 
     def stats(self) -> dict:
-        f = self.conn.execute("SELECT COUNT(*) n, SUM(parsed=1) ok, SUM(parsed=-1) bad FROM filings").fetchone()
+        f = self.conn.execute(
+            """SELECT COUNT(*) n, SUM(parsed=1) ok, SUM(parsed=-1) bad,
+                      SUM(parsed=1 AND reported_at IS NULL) pending FROM filings"""
+        ).fetchone()
         t = self.conn.execute("SELECT COUNT(*) n FROM trades").fetchone()
-        return {"filings": f["n"] or 0, "parsed_ok": f["ok"] or 0, "parsed_fail": f["bad"] or 0, "trades": t["n"] or 0}
+        return {
+            "filings": f["n"] or 0, "parsed_ok": f["ok"] or 0, "parsed_fail": f["bad"] or 0,
+            "unreported": f["pending"] or 0, "trades": t["n"] or 0,
+        }
+
+
+def trade_key(t: dict) -> tuple:
+    """같은 거래인지 판별하는 키. 원본 공시와 [기재정정] 공시가 같은 거래를 반복 보고할 때 쓴다.
+    단가는 정정으로 고쳐지는 경우가 많아 키에서 뺀다."""
+    return (
+        t["corp_code"], t.get("reporter") or "", t.get("event_date") or "", t.get("reason") or "",
+        t.get("security_type") or "", t.get("change_cnt") or 0,
+    )

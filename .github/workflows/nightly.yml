@@ -1,14 +1,16 @@
-# GitHub Actions 로 밤마다 돌리는 설정. 내 컴퓨터가 꺼져 있어도 GitHub 서버에서 돈다. 무료.
+# GitHub Actions 로 매일 아침 돌리는 설정. 내 컴퓨터가 꺼져 있어도 GitHub 서버에서 돈다. 무료.
 #
-# 준비물
-#   1. 저장소 Settings → Secrets and variables → Actions → New repository secret
-#        DART_API_KEY (필수), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (무료 채널), TELEGRAM_PAID_CHAT_ID (유료 채널, 선택), SMTP_* (선택)
-#   2. 저장소 Settings → Pages → Build and deployment → Source 를 "GitHub Actions" 로
-#   3. (선택) Settings → Secrets and variables → Actions → Variables 탭에
-#        SITE_TITLE, SITE_TAGLINE, SITE_SUBSCRIBE_URL (무료 채널 주소), SITE_URL (배포된 사이트 주소; 메시지 하단 링크)
+# 준비물: 저장소 Settings → Secrets and variables → Actions → New repository secret
+#   DART_API_KEY (필수), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (무료 채널),
+#   TELEGRAM_PAID_CHAT_ID (유료 채널, 선택), SMTP_* (이메일, 선택)
 #
-# 매 실행마다: 수집 → 리포트 → 텔레그램 발송 → DB·리포트를 레포에 커밋 → site/ 를 GitHub Pages 에 배포
-# 사이트 주소: https://<아이디>.github.io/<저장소이름>/
+# 매 실행: 최신 코드·DB 받기 → DART 수집 → 아직 안 보낸 공시만 텔레그램 발송 → DB 를 저장소에 저장
+#   - 같은 날 여러 번 돌려도(수동 실행, Re-run) 이미 보낸 공시는 다시 보내지 않는다.
+#   - 발송이 실패하면 빨간 X 로 끝나고, 다음 실행이 그 공시를 다시 보낸다.
+#
+# (선택) 아카이브 사이트: Settings → Pages → Source 를 "GitHub Actions" 로 바꾸고,
+#   Settings → Secrets and variables → Actions → Variables 에 ENABLE_PAGES = true 를 추가.
+#   비공개 저장소는 무료 요금제에서 Pages 를 쓸 수 없다.
 name: nightly-insider-report
 
 on:
@@ -33,7 +35,11 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      # ref: main → Re-run 을 눌러도 옛 스냅샷이 아니라 지금의 최신 코드·DB 에서 시작한다.
+      # (옛 스냅샷에서 시작하면 마지막에 DB 저장이 거부된다)
       - uses: actions/checkout@v5
+        with:
+          ref: main
 
       - uses: actions/setup-python@v6
         with:
@@ -42,7 +48,7 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: 수집·리포트·발송·사이트 생성
+      - name: 수집·발송
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -58,24 +64,37 @@ jobs:
           SITE_TAGLINE: ${{ vars.SITE_TAGLINE }}
           SITE_SUBSCRIBE_URL: ${{ vars.SITE_SUBSCRIBE_URL }}
           SITE_BASE_PATH: /${{ github.event.repository.name }}
-        run: python -m insider run --days 7 --lookback 1
+        run: python -m insider run
 
-      - name: DB·리포트 커밋 (다음 실행이 이어받도록)
+      # 발송이 실패해도 DB 는 저장한다 (새로 받은 공시, '아직 안 보냄' 상태를 다음 실행이 이어받도록).
+      - name: DB 저장 (다음 실행이 이어받도록)
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "insider-bot"
           git config user.email "insider-bot@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || git commit -m "data: $(date -u +%F)"
-          git push
+          if git diff --cached --quiet; then echo "저장할 변경 없음"; exit 0; fi
+          git commit -q -m "data: $(date +%F)"
+          # 실행 도중 다른 커밋(코드 수정 등)이 올라왔으면 그 위로 옮겨서 저장. 겹치면 방금 만든 DB 를 쓴다.
+          for i in 1 2 3; do
+            if git pull -q --rebase -X theirs origin main && git push -q origin HEAD:main; then
+              echo "저장 완료"; exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "저장 재시도 $i/3"; sleep $((i * 5))
+          done
+          echo "::error::DB 저장 실패. 다음 실행 때 같은 공시가 다시 발송될 수 있습니다."
+          exit 1
 
       - uses: actions/upload-pages-artifact@v4
+        if: ${{ vars.ENABLE_PAGES == 'true' }}
         with:
           path: site
 
-  # 사이트 게시. Settings → Pages → Source 를 "GitHub Actions" 로 켜기 전까지는 실패하지만,
-  # 핵심(수집·발송)과 무관하므로 전체 결과에는 영향을 주지 않는다.
+  # 아카이브 사이트 게시 (선택). ENABLE_PAGES 변수가 없으면 건너뛴다.
   deploy:
     needs: run
+    if: ${{ vars.ENABLE_PAGES == 'true' }}
     continue-on-error: true
     runs-on: ubuntu-latest
     environment:

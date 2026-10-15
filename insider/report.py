@@ -70,7 +70,10 @@ def headline(data: dict) -> str:
         parts.append(f"임원 매수 {len(buys)}명")
     if sells:
         parts.append(f"매도 {len(sells)}명")
-    base = f"공시 {st.get('filings_in_period', 0)}건 중 "
+    # 접수일을 밝힌다: 월요일 아침 브리핑은 금요일 접수분이라는 걸 바로 알 수 있게
+    a, b = data.get("rcept_from"), data.get("rcept_to")
+    when = "" if not a else (f"{_md(a)} 접수 " if a == b else f"{_md(a)}~{_md(b)} 접수 ")
+    base = f"{when}공시 {st.get('filings_in_period', 0)}건 중 "
     return base + (" · ".join(parts) if parts else "주목할 개인 임원 매매 없음")
 
 

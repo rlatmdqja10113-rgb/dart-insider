@@ -67,11 +67,17 @@ DART의 **임원ㆍ주요주주 특정증권등 소유상황보고서**를 밤�
 2. 저장소 **Settings → Secrets and variables → Actions → New repository secret** 에
    `DART_API_KEY`(필수), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, (유료 시작하면) `TELEGRAM_PAID_CHAT_ID`.
 3. (선택) 같은 화면 **Variables 탭**에 `SITE_TITLE`, `SITE_TAGLINE`, `SITE_SUBSCRIBE_URL`(= 무료 채널 주소 `https://t.me/insider_brief`).
-4. (선택) **Settings → Pages → Source** 를 **GitHub Actions** 로. 그러면 `https://<아이디>.github.io/<저장소>/` 에
-   아카이브 페이지가 매일 갱신된다. 채널 소개 링크·검색 유입용이지 주력이 아니다.
+4. (선택) 아카이브 사이트: **Settings → Pages → Source** 를 **GitHub Actions** 로 바꾸고, Variables 에
+   `ENABLE_PAGES` = `true` 추가. `https://<아이디>.github.io/<저장소>/` 에 매일 갱신된다 (비공개 저장소는 유료 요금제 필요).
 5. **Actions 탭 → nightly-insider-report → Run workflow** 로 한 번 수동 실행.
 
-이후 평일 아침 07:10 KST 에 GitHub 서버에서 수집 → 정리 → 텔레그램 발송 → DB 커밋 → (사이트 갱신) 이 자동으로 돈다.
+이후 평일 아침 07:10 KST 에 GitHub 서버에서 수집 → **아직 안 보낸 공시만** 텔레그램 발송 → DB 저장이 자동으로 돈다.
+
+- **월요일 아침**엔 금요일 낮~주말 접수분이 나간다. 접수일이 메시지 첫 줄에 찍힌다 (`10/16 접수 공시 47건 중 …`).
+- **같은 날 여러 번 돌려도** (수동 실행, Re-run) 이미 보낸 공시는 다시 안 나간다. 새 공시가 없으면 조용히 끝난다.
+- 새 공시가 스톡옵션·증여 같은 제외 대상뿐이면 '볼 것 없음' 메시지는 보내지 않는다.
+- **발송이 실패하면** 실행이 빨간 X 로 끝나고(GitHub 가 메일로 알려줌), 다음 실행이 그 공시를 다시 보낸다.
+- 내 컴퓨터에서 `run` 을 돌리면 GitHub 쪽과 별개로 채널에 또 올라간다. 로컬에선 `--dry-run` 이나 `report --unsent` 만 쓴다.
 
 **직접 서버 / 라즈베리파이**: `crontab.example` 참고.
 
@@ -79,15 +85,16 @@ DART의 **임원ㆍ주요주주 특정증권등 소유상황보고서**를 밤�
 
 | 명령 | 설명 |
 |---|---|
-| `python -m insider run [--days 7] [--lookback 1] [--dry-run]` | 수집 → 원문 파싱 → 리포트 → 발송 → 사이트 |
-| `python -m insider report --date 2026-10-15 --lookback 1` | DB 내용으로 마크다운 + 무료/유료 텔레그램 메시지 출력 |
+| `python -m insider run [--days 7] [--max-age 5] [--dry-run]` | 수집 → 원문 파싱 → 아직 안 보낸 공시 리포트·발송 → 사이트 |
+| `python -m insider report --unsent` | 다음 실행 때 나갈 내용 미리보기 (DB 를 바꾸지 않음) |
+| `python -m insider report --date 2026-10-15 --lookback 1` | 접수일 기준 기간 리포트 출력 (마크다운 + 무료/유료 텔레그램) |
 | `python -m insider backfill --days 365` | 과거 데이터 적재 (나중에 "이 회사 임원이 샀을 때 주가는?" 통계용) |
 | `python -m insider site [--days 30]` | 정적 사이트만 생성 |
 | `python -m insider stats` | DB 현황 |
 | `python -m insider reparse` | 저장된 원문(`data/raw`)으로 파서만 다시 실행. 네트워크 불필요. 파서를 고친 뒤 쓴다 |
 
-`--days` 는 공시 **목록 조회 범위**, `--lookback` 은 **리포트에 넣을 접수일 범위**. 보고 기한이 5영업일이라
-목록은 넉넉히(7일) 가져오고, 이미 받은 공시는 DB가 중복을 걸러준다.
+`--days` 는 공시 **목록 조회 범위**(이미 받은 공시는 DB 가 걸러준다), `--max-age` 는 **이보다 오래된 미발송 공시는
+보내지 않는다**는 기준이다. DART 가 원문을 늦게 올려 실패한 공시(`014 파일이 존재하지 않습니다`)는 `--days` 안에서 매번 다시 시도한다.
 
 ## 구조
 
