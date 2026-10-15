@@ -26,13 +26,16 @@ concurrency:
   group: nightly
   cancel-in-progress: false
 
+env:
+  TZ: Asia/Seoul
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -65,12 +68,15 @@ jobs:
           git diff --cached --quiet || git commit -m "data: $(date -u +%F)"
           git push
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
+  # 사이트 게시. Settings → Pages → Source 를 "GitHub Actions" 로 켜기 전까지는 실패하지만,
+  # 핵심(수집·발송)과 무관하므로 전체 결과에는 영향을 주지 않는다.
   deploy:
     needs: run
+    continue-on-error: true
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 
-from .config import Settings
+from .config import Settings, today_kst
 from .dart_client import DartClient, DartError
 from .db import Store
 from .parser import parse_ownership_report
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 def collect(settings: Settings, client: DartClient, store: Store, days: int) -> int:
     """최근 days 일간 접수된 B002 공시 목록을 가져와 DB에 넣는다. 새로 들어온 건수를 돌려준다."""
-    end = date.today()
+    end = today_kst()
     start = end - timedelta(days=days)
     rows = list(client.iter_insider_filings(start, end))
     inserted = store.upsert_filings(rows)
@@ -138,7 +138,7 @@ def run_daily(settings: Settings, days: int = 7, lookback_days: int = 1, dry_run
     collect(settings, client, store, days=days)
     parse_pending(settings, client, store)
 
-    today = date.today()
+    today = today_kst()
     data = build_report_data(settings, store, today, lookback_days)
     md = build_markdown(data, settings.top_n)
     tg_free = build_telegram(data, tier="free", site_url=settings.site_url)

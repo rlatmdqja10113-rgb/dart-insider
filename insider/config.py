@@ -3,7 +3,16 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def today_kst() -> date:
+    """서버가 UTC(GitHub Actions 등)여도 한국 날짜로 집계한다."""
+    return datetime.now(KST).date()
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -15,7 +15,7 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 
-from .config import Settings
+from .config import Settings, today_kst
 from .db import Store
 from .pipeline import build_report_data
 from .report import won, shares, headline
@@ -139,7 +139,7 @@ def build_site(settings: Settings, store: Store, out_dir: Path, days: int = 30, 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "reports").mkdir(exist_ok=True)
 
-    today = date.today()
+    today = today_kst()
     pages: list[tuple[date, dict]] = []
     for i in range(days):
         d = today - timedelta(days=i)

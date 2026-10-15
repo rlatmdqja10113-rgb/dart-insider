@@ -12,7 +12,7 @@ import argparse
 import sys
 from datetime import date
 
-from .config import settings
+from .config import settings, today_kst
 from .db import Store
 from . import pipeline
 
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rp = sub.add_parser("report", help="DB 내용으로 리포트만 생성")
     rp.add_argument("--lookback", type=int, default=1)
-    rp.add_argument("--date", type=date.fromisoformat, default=date.today())
+    rp.add_argument("--date", type=date.fromisoformat, default=today_kst())
 
     sub.add_parser("stats", help="DB 현황")
     sub.add_parser("reparse", help="저장된 원문(data/raw)으로 파서만 다시 실행 (네트워크 불필요)")
