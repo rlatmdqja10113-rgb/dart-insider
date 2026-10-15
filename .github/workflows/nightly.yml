@@ -1,0 +1,80 @@
+# GitHub Actions 로 밤마다 돌리는 설정. 내 컴퓨터가 꺼져 있어도 GitHub 서버에서 돈다. 무료.
+#
+# 준비물
+#   1. 저장소 Settings → Secrets and variables → Actions → New repository secret
+#        DART_API_KEY (필수), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (무료 채널), TELEGRAM_PAID_CHAT_ID (유료 채널, 선택), SMTP_* (선택)
+#   2. 저장소 Settings → Pages → Build and deployment → Source 를 "GitHub Actions" 로
+#   3. (선택) Settings → Secrets and variables → Actions → Variables 탭에
+#        SITE_TITLE, SITE_TAGLINE, SITE_SUBSCRIBE_URL (무료 채널 주소), SITE_URL (배포된 사이트 주소; 메시지 하단 링크)
+#
+# 매 실행마다: 수집 → 리포트 → 텔레그램 발송 → DB·리포트를 레포에 커밋 → site/ 를 GitHub Pages 에 배포
+# 사이트 주소: https://<아이디>.github.io/<저장소이름>/
+name: nightly-insider-report
+
+on:
+  schedule:
+    # UTC 기준. 한국 시간 07:10 = 전날 UTC 22:10. 일~목 UTC 밤 = 월~금 KST 아침.
+    - cron: "10 22 * * 0-4"
+  workflow_dispatch:   # Actions 탭에서 "Run workflow" 버튼으로 수동 실행
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 수집·리포트·발송·사이트 생성
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_PAID_CHAT_ID: ${{ secrets.TELEGRAM_PAID_CHAT_ID }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          SITE_TITLE: ${{ vars.SITE_TITLE }}
+          SITE_TAGLINE: ${{ vars.SITE_TAGLINE }}
+          SITE_SUBSCRIBE_URL: ${{ vars.SITE_SUBSCRIBE_URL }}
+          SITE_BASE_PATH: /${{ github.event.repository.name }}
+        run: python -m insider run --days 7 --lookback 1
+
+      - name: DB·리포트 커밋 (다음 실행이 이어받도록)
+        run: |
+          git config user.name "insider-bot"
+          git config user.email "insider-bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "data: $(date -u +%F)"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: run
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

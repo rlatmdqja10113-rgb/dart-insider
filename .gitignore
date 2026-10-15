@@ -1,0 +1,16 @@
+# 비밀
+.env
+
+# 원문 캐시 (매번 다시 받을 수 있음, 용량 큼)
+data/raw/
+
+# 생성물
+site/
+__pycache__/
+*.pyc
+.pytest_cache/
+_to_delete/
+_incoming/
+
+# data/insider.sqlite 와 data/reports/ 는 일부러 커밋한다:
+# GitHub Actions 가 매일 이어받아야 과거 이력(옵션행사 후 매도 판정, 통계)이 쌓인다.

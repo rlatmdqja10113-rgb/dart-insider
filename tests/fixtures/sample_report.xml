@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DOCUMENT>
+<DOCUMENT-NAME>임원ㆍ주요주주특정증권등소유상황보고서</DOCUMENT-NAME>
+<BODY>
+<TABLE>
+<TR><TD>보고구분</TD><TD>변동</TD><TD>보고자 구분</TD><TD>개인(국내)</TD></TR>
+<TR><TD>성명(명칭)</TD><TD>한 글</TD><TD>홍길동</TD><TD>한자(영문)</TD><TD>洪吉童</TD></TR>
+<TR><TD>생년월일 또는 사업자등록번호 등</TD><TD>700101</TD></TR>
+<TR><TD>발행회사와의 관계</TD><TD>임원(등기여부)</TD><TD>등기임원</TD><TD>직위명</TD><TD>대표이사</TD></TR>
+<TR><TD>선임일</TD><TD>2024년 03월 28일</TD><TD>퇴임일</TD><TD>-</TD></TR>
+<TR><TD>주요주주</TD><TD>-</TD></TR>
+</TABLE>
+<TABLE>
+<TR><TD>보고사유</TD><TD>변동일*</TD><TD>특정증권등의종류</TD><TD COLSPAN="3">소 유 주 식 수 (주)</TD><TD>취득/처분단가(원)**</TD><TD>비 고</TD><TD>거래계획보고일자</TD></TR>
+<TR><TD>변동전</TD><TD>증감</TD><TD>변동후</TD></TR>
+<TR><TE>장내매수(+)</TE><TE>2026년 10월 08일</TE><TE>보통주</TE><TE>120,000</TE><TE>5,000</TE><TE>125,000</TE><TE>31,250</TE><TE>-</TE><TE>-</TE></TR>
+<TR><TE>장내매수(+)</TE><TE>2026년 10월 10일</TE><TE>보통주</TE><TE>125,000</TE><TE>3,000</TE><TE>128,000</TE><TE>30,900</TE><TE>-</TE><TE>-</TE></TR>
+<TR><TE>주식매수선택권행사(+)</TE><TE>2026년 10월 12일</TE><TE>보통주</TE><TE>128,000</TE><TE>10,000</TE><TE>138,000</TE><TE>12,000</TE><TE>행사가</TE><TE>-</TE></TR>
+<TR><TE>장내매도(-)</TE><TE>2026년 10월 13일</TE><TE>보통주</TE><TE>138,000</TE><TE>10,000</TE><TE>128,000</TE><TE>31,000</TE><TE>-</TE><TE>-</TE></TR>
+<TR><TE>합 계</TE><TE>120,000</TE><TE>8,000</TE><TE>128,000</TE><TE>-</TE><TE>-</TE></TR>
+</TABLE>
+</BODY>
+</DOCUMENT>
